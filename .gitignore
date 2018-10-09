@@ -82,4 +82,4 @@ target/
 .DS_Store
 
 #QGIS documents
-.qgs
+*.qgs
