@@ -1,0 +1,149 @@
+# -*- coding: utf-8 -*-
+import click
+import logging
+from pathlib import Path
+from dotenv import find_dotenv, load_dotenv
+from sqlalchemy import create_engine
+import os
+import numpy as np
+import pandas as pd
+import warnings
+import itertools
+warnings.filterwarnings("ignore")
+
+MF_CODES = ["002", "003", "059", "061", "067"]
+TAX_RATES = {"0": 0.03195986, "D": 0.0405}
+#os.chdir(os.path.dirname(__file__))
+
+
+@click.group()
+def main():
+    pass
+
+@main.command()
+@click.argument("city", default="0")
+@click.argument("num_units", default=list(range(2,21)))
+@click.argument("rates", default=[np.round(i, 3) for i in list(np.arange(.25, .4, .025))])
+def build_tax_estimate(city, num_units, rates):
+    tot = current_revenue(city)
+    p_rates = []
+    p_units = []
+    taxes = []
+    for rate, unit in itertools.product(rates, num_units):
+        #projected tax revenue if rate reduced for all units of size unit and below
+        p_taxes = (df[(df.parcelid.str[0] == city) &
+                      (df["class"] == "C") &
+                      (df.luc.isin(MF_CODES)) & 
+                      (df.livunit.between(2,unit))].rtotapr.sum() * rate * TAX_RATES[city]
+                  )
+        #current tax revenue
+        c_taxes = (df[(df.parcelid.str[0] == city) &
+                      (df["class"] == "C") &
+                      (df.luc.isin(MF_CODES)) & 
+                      (df.livunit > unit)].rtotasmt.sum() * TAX_RATES[city]
+                  )
+        taxes.append(p_taxes + c_taxes)
+        p_units.append(unit)
+        p_rates.append(rate)
+    data = {"tax_rate":p_rates, "num_units":p_units, "est_tax":taxes}
+    tax = pd.DataFrame(data)
+    tax["pct_diff"] = (np.abs(tax.est_tax-tot)/((tax.est_tax+tot)/2))*100
+    tax.to_sql("revenue_estimates", engine, schema="mftax", 
+              if_exists="replace", index_label="fid")
+    tax.to_csv(os.path.join(project_dir, "reports/estimated_tax.csv"), index=False)
+
+
+
+# @click.command()
+# @click.argument('input_filepath', type=click.Path(exists=True))
+# @click.argument('output_filepath', type=click.Path())
+@main.command()
+def build_asmt_table():#(input_filepath, output_filepath):
+    """
+    pulls data from relevant sources (../raw, postgresql, etc.) and adds it to the schema
+    for this analysis (i.e. mftax)
+    """
+    logger = logging.getLogger(__name__)
+    logger.info('building schema and loading data')
+    q_schema = ("create schema if not exists mftax")
+    engine.execute(q_schema)
+    q_drop = ("drop table if exists mftax.asmt")
+    engine.execute(q_drop)
+    q_load = ("create table mftax.asmt as "
+              "select row_number() over() fid, parcelid, "
+              "concat(adrno, ' ', adrstr, ' ', adrsuf, ' ', zip1) addr, "
+              "a.class, a.luc, livunit, zoning, rtotasmt, rtotapr, wkb_geometry "
+              "from sca_parcels "
+              "left join sca_asmt a on parcelid = a.parid "
+              "left join sca_pardat pd on parcelid = pd.parid"
+              )
+    engine.execute(q_load)
+    q_idx = ("create index ix_asmt_parcelid on mftax.asmt (parcelid);"
+             "create index gix_asmt_wkb_geometry on mftax.asmt using gist(wkb_geometry);"
+             "alter table mftax.asmt add primary key (fid);"
+             )
+    engine.execute(q_idx)
+
+@main.command()
+@click.argument("unit_step", default=1, required=False)
+@click.argument("rate_step", default=.025, required=False)
+def set_units_and_rates(unit_step=1, rate_step=.025, **kwargs):
+    logger = logging.getLogger(__name__)
+    logger.info('loading livunits and tax rate tables')
+
+    if "unit_min" in kwargs:
+        unit_min = kwargs["unit_min"]
+    else:
+        unit_min = 2
+    if "unit_max" in kwargs:
+        unit_max = kwargs["unit_max"]
+    else:
+        unit_max = 21
+    if "rate_min" in kwargs:
+        rate_min = kwargs["rate_min"]
+    else:
+        rate_min = .25
+    if "rate_max" in kwargs:
+        rate_max = kwargs["rate_max"]
+    else:
+        rate_max = .4
+
+    rates = [np.round(i, 3) for i in list(np.arange(rate_min, rate_max, rate_step))]
+    units = list(range(unit_min, unit_max, unit_step))
+    df_rates = pd.DataFrame(rates, columns=["tax_rate"])
+    df_rates.to_sql("tax_rates", engine, schema="mftax", if_exists="replace", index_label="fid")
+    df_units = pd.DataFrame(units, columns=["livunit"])
+    df_units.to_sql("livunits", engine, schema="mftax", if_exists="replace", index_label="fid")
+
+def current_revenue(city="0"):
+
+    # df = pd.read_sql("select * from mftax.asmt", engine)
+    return df[(df.parcelid.str[0] == city) &
+              (df["class"] == "C") &
+              (df.luc.isin(MF_CODES)) & 
+              (df.livunit >= 2)].rtotasmt.sum() * TAX_RATES[city]
+
+
+
+
+if __name__ == '__main__':
+    log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    logging.basicConfig(level=logging.INFO, format=log_fmt)
+
+    # not used in this stub but often useful for finding various files
+    project_dir = Path(__file__).resolve().parents[2]
+    os.chdir(project_dir)
+    print(project_dir, os.listdir(project_dir))
+
+    # find .env automagically by walking up directories until it's found, then
+    # load up the .env entries as environment variables
+    load_dotenv(find_dotenv())
+    database_url = os.getenv("DATABASE_URL")
+    engine = create_engine(database_url)
+    df = pd.read_sql("select * from mftax.asmt", engine)
+    main()
+    # build_asmt_table()
+    # set_units_and_rates()
+
+
+    
