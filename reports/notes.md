@@ -10,8 +10,9 @@ Land Use Code and Zoning
 
 |LUC|Description|Median Number<br>of Living Units| Zoning |
 | :----------: | :-------------------: | :-------------------: | :-------:|
-|   002  | Apartment Complex     | 32    | RU-2 |
+|   002  | Apartment Complex     | 32    | RU-3, RU-4, RU-5, CBD |
 |   003  | Apartment High Rise   | 52.5  | RU-5, R-W, OG,<br>CMU-1, CMU-2, CMU-3,<br>CBD, CMP-1, CMP-2 |
-|   059  | Duplex                | 2     | RU-1 |
+|   059  | Duplex                | 2     | RU-1, RU-2, RU-3, RU-4, R-W,  |
 |   061  | Triplex               | 3     | None |
 |   067  | Apartment Garden      | 6     | RU-3, RU-4 |
+

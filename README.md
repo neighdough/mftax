@@ -24,6 +24,7 @@ Project Organization
     │                         `1.0-jqp-initial-data-exploration`.
     │
     ├── references         <- Data dictionaries, manuals, and all other explanatory materials.
+    │   └── mftax.md       <- Connection information and details about tables inside mftax schema
     │
     ├── reports            <- Generated analysis as HTML, PDF, LaTeX, etc.
     │   └── figures        <- Generated graphics and figures to be used in reporting
